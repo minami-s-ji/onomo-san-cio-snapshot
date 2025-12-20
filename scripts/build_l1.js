@@ -12,7 +12,14 @@ const PRE_REGEX = /<pre id="content">[\s\S]*?<\/pre>/;
   const browser = await chromium.launch();
   const page = await browser.newPage();
 
-  await page.goto(L1_URL, { waitUntil: "networkidle" });
+  // ★ timeout回避：networkidleを使わない／待ち時間を明示
+  await page.goto(L1_URL, {
+    waitUntil: "domcontentloaded",
+    timeout: 60000,
+  });
+
+  // ★ 少し待ってから取得（Notion対策）
+  await page.waitForTimeout(3000);
 
   const text = await page.evaluate(() => {
     const el =
