@@ -15,10 +15,10 @@ async function run() {
   const text = await res.text();
   const html = fs.readFileSync("docs/L1.html", "utf-8");
 
-  const updated = html.replace(
-    /<pre id="content">[\s\S]*?<\/pre>/,
-    `<pre id="content">\n${escapeHtml(text)}\n</pre>`
-  );
+const updated = html.replace(
+  /<pre id="content">[\s\S]*?<\/pre>/,
+  `<div id="content">\n${text}\n</div>`
+);
 
   fs.writeFileSync("docs/L1.html", updated, "utf-8");
 }
