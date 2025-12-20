@@ -1,64 +1,41 @@
 const fs = require("fs");
-const cheerio = require("cheerio");
+const { chromium } = require("playwright");
 
-// Notion の L1 公開URL（あなたのURLのままでOK）
 const L1_URL =
   "https://relieved-animantarx-a06.notion.site/L1-CIO-2cd840b3d8eb80cbb93deffcb4d825e1";
 
 const OUT_FILE = "docs/L1.html";
-const TEMPLATE_FILE = "docs/L1.html"; // 同じファイルをテンプレとして差し替える運用
+const TEMPLATE_FILE = "docs/L1.html";
 const PRE_REGEX = /<pre id="content">[\s\S]*?<\/pre>/;
 
-async function run() {
-  const res = await fetch(L1_URL, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (GitHubActions) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
-      Accept: "text/html,application/xhtml+xml",
-    },
+(async () => {
+  const browser = await chromium.launch();
+  const page = await browser.newPage();
+
+  await page.goto(L1_URL, { waitUntil: "networkidle" });
+
+  const text = await page.evaluate(() => {
+    const el =
+      document.querySelector("main") ||
+      document.querySelector('[role="main"]') ||
+      document.body;
+    return el ? el.innerText : "";
   });
 
-  if (!res.ok) throw new Error(`Failed to fetch L1: ${res.status}`);
-
-  const notionHtml = await res.text();
-
-  const $ = cheerio.load(notionHtml);
-  $("script, style, noscript, svg, iframe, canvas").remove();
-
-  const candidates = [
-    "main",
-    "article",
-    '[role="main"]',
-    ".notion-page-content",
-    ".notion-scroller",
-    "body",
-  ];
-
-  let text = "";
-  for (const sel of candidates) {
-    const t = $(sel).text();
-    if (t && t.trim().length > 200) {
-      text = t;
-      break;
-    }
-  }
-  if (!text) text = $("body").text() || "";
+  await browser.close();
 
   const cleaned = normalizeText(text);
 
-  // ★事故防止：短すぎる場合は失敗扱いにして「空で上書き」を止める
   const MIN_CHARS = 500;
   if (cleaned.length < MIN_CHARS) {
     throw new Error(
-      `Content too short (${cleaned.length}). Abort to prevent empty overwrite.`
+      `Content too short (${cleaned.length}). Abort to prevent overwrite.`
     );
   }
 
   const template = fs.readFileSync(TEMPLATE_FILE, "utf-8");
   if (!PRE_REGEX.test(template)) {
-    throw new Error(
-      `Template does not contain <pre id="content">...</pre>: ${TEMPLATE_FILE}`
-    );
+    throw new Error("Template missing <pre id=\"content\">");
   }
 
   const updated = template.replace(
@@ -67,8 +44,11 @@ async function run() {
   );
 
   fs.writeFileSync(OUT_FILE, updated, "utf-8");
-  console.log(`Updated: ${OUT_FILE} (chars=${cleaned.length})`);
-}
+  console.log(`Updated L1.html (chars=${cleaned.length})`);
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
 
 function normalizeText(input) {
   return (input || "")
@@ -85,8 +65,3 @@ function escapeHtml(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
-
-run().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
