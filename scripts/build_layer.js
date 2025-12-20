@@ -1,21 +1,30 @@
 const fs = require("fs");
 const { chromium } = require("playwright");
 
-const layer = process.argv[2]; // "L1" など
-const url = process.argv[3]; // Notion公開URL
+const layer = process.argv[2]; // L1〜L5
+const url = process.argv[3];
 
 if (!layer || !url) {
   console.error("Usage: node scripts/build_layer.js <LAYER> <URL>");
   process.exit(1);
 }
 
-// ★ ここが今回のエラー原因に直結：テンプレは必ず docs/_template.html
 const OUT_FILE = `docs/${layer}.html`;
 const TEMPLATE_FILE = "docs/_template.html";
 const PRE_REGEX = /<pre id="content">[\s\S]*?<\/pre>/;
 
+// ★ レイヤ別の最低文字数（事故防止＋現実対応）
+const MIN_CHARS_BY_LAYER = {
+  L1: 500,
+  L2: 500,
+  L3: 200,
+  L4: 200,
+  L5: 500,
+};
+
+const MIN_CHARS = MIN_CHARS_BY_LAYER[layer] ?? 300;
+
 (async () => {
-  // 念のため：テンプレがあるか最初にチェックして、分かりやすく落とす
   if (!fs.existsSync(TEMPLATE_FILE)) {
     throw new Error(`Template not found: ${TEMPLATE_FILE}`);
   }
@@ -29,13 +38,11 @@ const PRE_REGEX = /<pre id="content">[\s\S]*?<\/pre>/;
   });
 
   const cleaned = await waitAndExtract(page);
-
   await browser.close();
 
-  const MIN_CHARS = 500;
   if (cleaned.length < MIN_CHARS) {
     throw new Error(
-      `Content too short (${cleaned.length}). Abort to prevent overwrite.`
+      `Content too short (${cleaned.length}). Min required=${MIN_CHARS}. Abort to prevent overwrite.`
     );
   }
 
@@ -52,7 +59,7 @@ const PRE_REGEX = /<pre id="content">[\s\S]*?<\/pre>/;
   fs.writeFileSync(OUT_FILE, updated, "utf-8");
   console.log(`Updated ${layer}.html (chars=${cleaned.length})`);
 })().catch((e) => {
-  console.error(e);
+  console.error(e.message || e);
   process.exit(1);
 });
 
@@ -70,7 +77,7 @@ async function waitAndExtract(page) {
       return el ? el.innerText : "";
     });
     last = normalizeText(text);
-    if (last.length >= 500) return last;
+    if (last.length >= 200) return last;
   }
   return last;
 }
