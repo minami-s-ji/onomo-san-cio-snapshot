@@ -5,23 +5,35 @@ const cheerio = require("cheerio");
 const L1_URL =
   "https://relieved-animantarx-a06.notion.site/L1-CIO-2cd840b3d8eb80cbb93deffcb4d825e1";
 
+const OUT_FILE = "docs/L1.html";
+const TEMPLATE_FILE = "docs/L1.html"; // 同じファイルをテンプレとして差し替える運用
+const PRE_REGEX = /<pre id="content">[\s\S]*?<\/pre>/;
+
 async function run() {
-  const res = await fetch(L1_URL);
+  // 1) Notion HTML取得
+  const res = await fetch(L1_URL, {
+    headers: {
+      // たまに弾かれるのを避ける保険（効かない時もあるが害は少ない）
+      "User-Agent":
+        "Mozilla/5.0 (GitHubActions) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
+      Accept: "text/html,application/xhtml+xml",
+    },
+  });
   if (!res.ok) throw new Error(`Failed to fetch L1: ${res.status}`);
 
-  const html = await res.text();
+  const notionHtml = await res.text();
 
-  // 1) HTMLをパース
-  const $ = cheerio.load(html);
+  // 2) HTMLをパース
+  const $ = cheerio.load(notionHtml);
 
-  // 2) 余計なものを除去
-  $("script, style, noscript, svg").remove();
+  // 3) 余計なものを除去（重い/ノイズになりがち）
+  $("script, style, noscript, svg, iframe, canvas").remove();
 
-  // 3) 本文っぽい領域を優先して抽出（取れなければ body 全体）
-  // NotionのDOMは変わり得るので、複数候補でフォールバックする
+  // 4) 本文候補を優先順で探す（NotionのDOMは変わるのでフォールバック）
   const candidates = [
     "main",
     "article",
+    '[role="main"]',
     ".notion-page-content",
     ".notion-scroller",
     "body",
@@ -35,28 +47,43 @@ async function run() {
       break;
     }
   }
-  if (!text) text = $("body").text();
+  if (!text) text = $("body").text() || "";
 
-  // 4) テキストを整形（空白/改行を適度に）
-  const cleaned = text
-    .replace(/\r/g, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
+  // 5) テキスト整形（読みやすさ優先で“軽く”）
+  const cleaned = normalizeText(text);
 
-  // 5) docs/L1.html の <pre id="content">...</pre> を差し替え
-  const template = fs.readFileSync("docs/L1.html", "utf-8");
+  // 6) docs/L1.html の <pre id="content">...</pre> を差し替え
+  const template = fs.readFileSync(TEMPLATE_FILE, "utf-8");
+  if (!PRE_REGEX.test(template)) {
+    throw new Error(
+      `Template does not contain <pre id="content">...</pre>: ${TEMPLATE_FILE}`
+    );
+  }
+
   const updated = template.replace(
-    /<pre id="content">[\s\S]*?<\/pre>/,
+    PRE_REGEX,
     `<pre id="content">${escapeHtml(cleaned)}</pre>`
   );
 
-  fs.writeFileSync("docs/L1.html", updated, "utf-8");
+  fs.writeFileSync(OUT_FILE, updated, "utf-8");
+  console.log(`Updated: ${OUT_FILE} (chars=${cleaned.length})`);
+}
+
+function normalizeText(input) {
+  return (input || "")
+    .replace(/\r/g, "")
+    // 行末の余計な空白
+    .replace(/[ \t]+\n/g, "\n")
+    // 空行を最大2行に
+    .replace(/\n{3,}/g, "\n\n")
+    // 連続スペースを1つに
+    .replace(/[ \t]{2,}/g, " ")
+    // 前後の空白を落とす
+    .trim();
 }
 
 function escapeHtml(str) {
-  return str
+  return (str || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
