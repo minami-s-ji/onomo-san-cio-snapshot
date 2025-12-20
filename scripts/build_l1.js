@@ -1,7 +1,6 @@
-import fs from "fs";
-import fetch from "node-fetch";
+const fs = require("fs");
 
-// ★ Notion の L1 公開URLをここに入れる
+// ★ Notion の L1 公開URL（あなたのURLのままでOK）
 const L1_URL = "https://relieved-animantarx-a06.notion.site/L1-CIO-2cd840b3d8eb80cbb93deffcb4d825e1";
 
 async function run() {
@@ -16,7 +15,7 @@ async function run() {
     `<pre id="content">\n${escapeHtml(text)}\n</pre>`
   );
 
-  fs.writeFileSync("docs/L1.html", updated);
+  fs.writeFileSync("docs/L1.html", updated, "utf-8");
 }
 
 function escapeHtml(str) {
@@ -26,4 +25,7 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;");
 }
 
-run();
+run().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
