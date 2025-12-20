@@ -5,6 +5,12 @@ permissions:
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"   # 30分ごと（必要なら後で変更）
+
+concurrency:
+  group: snapshot-build
+  cancel-in-progress: true
 
 jobs:
   build:
