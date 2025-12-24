@@ -56,7 +56,9 @@ const NAV_RETRIES = 3;
     const msg = `Content too short (${cleaned.length}). Min required=${MIN_CHARS}.`;
     // “存在する”前提なので、ここは止める（取りこぼしを見逃さない）
     throw new Error(
-      `${layer}: ${msg} (after ${NAV_RETRIES} retries) ${lastErr ? " lastErr=" + (lastErr.message || lastErr) : ""}`
+      `${layer}: ${msg} (after ${NAV_RETRIES} retries) ${
+        lastErr ? " lastErr=" + (lastErr.message || lastErr) : ""
+      }`
     );
   }
 
@@ -81,20 +83,25 @@ async function fetchNotionText(page, url, minChars) {
   // 1回目で変な状態を掴んだ時に備えて、毎回新規ロード扱いに寄せる
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
 
-  // mainが出るまで待つ（出ないページもあるのでタイムアウトあり）
+  // 初期描画待ち
   await page.waitForTimeout(1500);
 
-  // 「本文がある程度の長さになるまで」待つ（ここが最重要）
-  // Notionは描画が遅い時があるので最大45秒まで待つ
+  // 長文（特にL4）対策：スクロールして本文をDOMに出す
+  await autoScroll(page);
+  await page.waitForTimeout(1000);
+
+  // 「本文がある程度の長さになるまで」待つ（最大45秒）
   try {
     await page.waitForFunction(
       (n) => {
-        const el =
-          document.querySelector("main") ||
-          document.querySelector('[role="main"]') ||
-          document.body;
+        const candidates = [
+          document.querySelector(".notion-page-content"),
+          document.querySelector("main"),
+          document.querySelector('[role="main"]'),
+          document.body,
+        ];
+        const el = candidates.find((x) => x && (x.innerText || "").trim().length);
         const t = el ? el.innerText : "";
-        // “Loading”っぽい状態や極端に短い状態を弾く
         return t && t.replace(/\s+/g, " ").trim().length >= n;
       },
       minChars,
@@ -108,11 +115,17 @@ async function fetchNotionText(page, url, minChars) {
   await page.waitForTimeout(1000);
 
   const text = await page.evaluate(() => {
-    const el =
-      document.querySelector("main") ||
-      document.querySelector('[role="main"]') ||
-      document.body;
-    return el ? el.innerText : "";
+    const candidates = [
+      document.querySelector(".notion-page-content"),
+      document.querySelector("main"),
+      document.querySelector('[role="main"]'),
+      document.body,
+    ];
+    for (const el of candidates) {
+      const t = el ? el.innerText : "";
+      if (t && t.trim().length > 0) return t;
+    }
+    return "";
   });
 
   const cleaned = normalizeText(text);
@@ -123,6 +136,32 @@ async function fetchNotionText(page, url, minChars) {
   }
 
   return cleaned;
+}
+
+async function autoScroll(page) {
+  await page.evaluate(async () => {
+    await new Promise((resolve) => {
+      const distance = 800;
+      const maxScrolls = 30; // 暴走防止
+      let scrolls = 0;
+
+      const timer = setInterval(() => {
+        window.scrollBy(0, distance);
+        scrolls += 1;
+
+        const nearBottom =
+          window.innerHeight + window.scrollY >=
+          document.body.scrollHeight - 200;
+
+        if (nearBottom || scrolls >= maxScrolls) {
+          clearInterval(timer);
+          // 先頭に戻す（抽出安定化）
+          window.scrollTo(0, 0);
+          resolve();
+        }
+      }, 200);
+    });
+  });
 }
 
 function normalizeText(input) {
