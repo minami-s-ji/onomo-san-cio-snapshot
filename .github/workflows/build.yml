@@ -5,9 +5,8 @@ permissions:
 
 on:
   workflow_dispatch:
-  # 安定確認後に戻す
-  # schedule:
-  #   - cron: "*/30 * * * *" # 30分ごと
+schedule:
+  - cron: "*/30 * * * *"
 
 concurrency:
   group: snapshot-build
